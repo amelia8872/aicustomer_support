@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Box, Stack, TextField, Button } from "@mui/material";
 
 export default function Home() {
@@ -8,24 +8,62 @@ export default function Home() {
     {
       role: "assistant",
       content:
-        "I'm the Headstarter support assistant, what can I help with today?",
+        "Hi. I am the Headstarter virtual assistant. How can I help you today?",
     },
   ]);
 
+  const messagesEndRef = useRef(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
   const sendMessage = async () => {
-    const newMessages = [...messages, { role: "user", content: message }];
+    if (message.trim() === "") return;
+
+    setMessages((prevMessages) => [
+      ...prevMessages,
+      { role: "user", content: message },
+      { role: "assistant", content: "" },
+    ]);
+
+    setMessage("");
 
     const response = await fetch("/api/chat", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(newMessages),
+      body: JSON.stringify([{ role: "user", content: message }]),
     });
 
-    const data = await response.json();
-    setMessages([...newMessages, { role: "assistant", content: data.message }]);
-    setMessage(""); // Clear the input field after sending
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+
+    let result = "";
+    reader.read().then(function processText({ done, value }) {
+      if (done) return;
+
+      const text = decoder.decode(value || new Int8Array(), { stream: true });
+      setMessages((prevMessages) => {
+        let lastMessage = prevMessages[prevMessages.length - 1];
+        let otherMessages = prevMessages.slice(0, prevMessages.length - 1);
+        return [
+          ...otherMessages,
+          {
+            ...lastMessage,
+            content: lastMessage.content + text,
+            role: "assistant",
+          },
+        ];
+      });
+
+      reader.read().then(processText);
+    });
   };
 
   return (
@@ -68,6 +106,7 @@ export default function Home() {
               </Box>
             </Box>
           ))}
+          <div ref={messagesEndRef} />
         </Stack>
         <Stack direction={"row"} spacing={2}>
           <TextField
